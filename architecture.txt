@@ -1,0 +1,41 @@
+            +-------------------+
+            |   Source Code     |
+            |  (Lox language)   |
+            +-------------------+
+                     |
+                     | 1. Lexical Analysis
+                     v
+            +-------------------+
+            |     Scanner       |
+            | (Tokenizes code)  |
+            +-------------------+
+                     |
+                     | 2. Parsing
+                     v
+            +-------------------+
+            |     Parser        |
+            | (Builds AST)      |
+            +-------------------+
+                     |
+                     | 3. Bytecode Generation 
+                     v
+            +-------------------+
+            |   Compiler        |
+            | (Generates        |
+            |  bytecode from    |
+            |   AST)            |
+            +-------------------+
+                     |
+                     | 4. Bytecode Execution
+                     v
+            +-------------------+
+            |  Virtual Machine  |
+            | (Executes         |  --------> This is our task 
+            |   bytecode)       |
+            +-------------------+
+                     |
+                     | 5. Output
+                     v
+            +-------------------+
+            |    Final Output   |
+            +-------------------+
