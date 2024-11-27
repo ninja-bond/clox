@@ -1,0 +1,33 @@
+1. Single Responsibility Principle (SRP)
+The Single Responsibility Principle states that a class or module should have only one reason to change, meaning it should have only one job or responsibility.
+
+In other words, each class or module should focus on a single task or responsibility in the system. If a class or module has multiple responsibilities, it becomes more complex, harder to understand, and more challenging to maintain. By limiting each class or module to a single responsibility, you make your code more modular, easier to test, and easier to refactor.
+
+Benefits of SRP:
+Improved Code Readability: Classes are simpler and easier to understand.
+Easier Maintenance: Since each class has a focused responsibility, changes are isolated and don’t impact other parts of the code.
+Better Testability: Smaller, focused classes are easier to test individually.
+Example of SRP:
+Suppose you have a class that handles both user authentication and data logging:
+
+python
+Copy code
+class UserAccount:
+    def authenticate_user(self, username, password):
+        # logic for authentication
+
+    def log_access(self, username):
+        # logic for logging access
+This violates SRP because it has two responsibilities: authentication and logging.
+
+Following SRP, you would separate these into two classes:
+
+python
+Copy code
+class Authenticator:
+    def authenticate_user(self, username, password):
+        # logic for authentication
+
+class Logger:
+    def log_access(self, username):
+        # logic for logging access
