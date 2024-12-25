@@ -5,6 +5,7 @@
 #include "common.h"
 #include "compiler.h"
 #include "scanner.h"
+#include "value.h"
 
 #ifndef DEBUG_PRINT_CODE
 #include "debug.h"
@@ -63,7 +64,7 @@ static void errorAt(Token* token, const char* message){
         fprintf(stderr, " at '%.*s'", token->length, token->start);
     }
 
-    fprint(stderr, ": %s\n", message);
+    fprintf(stderr, ": %s\n", message);
     parser.hadError = true;
 }
 
@@ -86,7 +87,7 @@ static void advance(){
     }
 }
 
-static void cosume(TokenType type, const char* message){
+static void consume(TokenType type, const char* message){
     if(parser.current.type == type){
         advance();
         return;
@@ -169,7 +170,7 @@ static void literal(){
 
 static void grouping(){
     expression();
-    consume(TOKEN_RIGHT_PARAN, "Expect ')' after expression.");
+    consume(TOKEN_RIGHT_PAREN, "Expect ')' after expression.");
 }
 
 static void number(){
@@ -273,7 +274,7 @@ bool compile(const char* source, Chunk* chunk){
     expression();
     consume(TOKEN_EOF, "Expect end of expression");
 
-    endcompiler();
+    endCompiler();
     return !parser.hadError;
     /*int line = -1;
     for(;;){
