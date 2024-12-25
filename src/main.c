@@ -1,4 +1,4 @@
-#include <stdio.h>
+// #include <cstdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -6,7 +6,8 @@
 #include "chunk.h"
 #include "debug.h"
 #include "vm.h"
-#include <cstdint>
+#include <stdio.h>
+// #include <cstdint>
 
 static void repl(){
     char line[1024];
@@ -53,7 +54,7 @@ static char* readFile(const char* path){
 }
 
 static void runFile(const char* path){
-    char* source readFile(path);
+    char* source = readFile(path);
     InterpretResult result = interpret(source);
     free(source);
 
@@ -99,10 +100,10 @@ int main(int argc, const char* argsv[]){
         repl();
     }
     else if(argc == 2){
-        runFile(argv[1]);
+        runFile(argsv[1]);
     }
     else{
-        fprintf(stderr, "Usage: clox [path]\n")
+        fprintf(stderr, "Usage: clox [path]\n");
         exit(64);
     }
 
