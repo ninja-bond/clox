@@ -58,7 +58,7 @@ bool valuesEqual(Value a, Value b){
             ObjString* bString = AS_STRING(b);
             return aString->length == bString->length && 
                     memcmp(aString->chars, bString->chars, aString->length) == 0;*/
-        }
+        
         default:
             return false;
     }
