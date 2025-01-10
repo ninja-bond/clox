@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include "chunk.h"
 #include "table.h"
 
 #include "common.h"
@@ -20,6 +21,22 @@ static Obj* allocateObject(size_t size, ObjType type){
     vm.objects = object; //adding on the front of the list and the vm always points to the top of the object allocated list
 
     return object;
+}
+
+ObjClosure* newClosure(ObjFunction* function){
+    ObjClosure* closure = ALLOCATE_OBJ(ObjClosure, OBJ_CLOSURE);
+    closure->function = function;
+    return closure;
+}
+
+ObjFunction* newFunction(){
+    ObjFunction* function = ALLOCATE_OBJ(ObjFunction, OBJ_FUNCTION);
+
+    function -> arity = 0;
+    function->upvalueCount = 0 ;
+    function -> name = NULL;
+    initChunk(&function->chunk);
+    return function ;
 }
 
 static ObjString* allocateString(char* chars, int length, uint32_t hash){
@@ -60,10 +77,27 @@ ObjString* copyString(const char* chars, int length){
     return allocateString(heapChars, length, hash);
 }
 
+static void printFunction(ObjFunction* function){
+    if(function -> name == NULL){
+        print("<script>");
+        return;
+    }
+    printf("<fn %s>", function -> name -> chars);
+}
+
 void printObject(Value value){
     switch(OBJ_TYPE(value)){
+        case OBJ_CLOSURE:
+            printFunction(AS_CLOSURE(value)->function);
+            break;
         case OBJ_STRING:
             printf("%s", AS_CSTRING(value));
             break;
+        
+        case OBJ_FUNCTION:
+            printFunction(AS_FUNCTION(value));
+            break;
+            
     }
+    
 }

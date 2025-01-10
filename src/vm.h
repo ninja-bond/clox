@@ -1,15 +1,28 @@
 #ifndef clox_vm_h
 #define clox_vm_h
+#include "object.h"
 #include "value.h"
 #include "table.h"
+#include "object.h"
+#include <stdint.h>
 
-#define STACK_MAX 256
+// #define STACK_MAX 256
+#define FRAME_MAX 64
+#define STACK_MAX (FRAME_MAX*UINT8_COUNT)
+
+typedef struct{
+    ObjClosure* closure;
+    uint8_t* ip;
+    Value* slots;
+}CallFrame;
 
 #include "chunk.h"
 
 typedef struct{
-    Chunk* chunk;
-    uint8_t* ip;
+    CallFrame frames[FRAME_MAX];
+    int frameCount;
+    // Chunk* chunk;
+    // uint8_t* ip;
     Value stack[STACK_MAX];
     Value* stackTop;
     Table globals;
