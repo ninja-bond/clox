@@ -1,17 +1,23 @@
 // #include <stdint>
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "chunk.h"
 #include "common.h"
 #include "compiler.h"
 #include "debug.h"
+#include "memory.h"
+#include "object.h"
+#include "table.h"
 #include "value.h"
 #include "vm.h"
 VM vm;
 
 static void resetStack(){
     vm.stackTop = vm.stack;
+    vm.frameCount = 0;
 }
 
 static void runtimeError(const char* format, ...){
@@ -21,8 +27,25 @@ static void runtimeError(const char* format, ...){
     va_end(args);
     fputs("\n", stderr);
 
-    size_t instruction = vm.ip - vm.chunk->code - 1;
-    int line = vm.chunk->lines[instruction];
+    for (int i = vm.frameCount - 1; i >= 0; i--){
+        CallFrame* frame = &vm.frames[i];
+        ObjFunction* function = frame->function;
+
+        size_t instruction = frame->ip - function->chunk.code -1;
+        fprintf(stderr, "[line %d] i ", function->chunk.lines[instruction]);
+        if(function -> name == NULL){
+            fprintf(stderr, "script \n");
+
+        }else{
+            fprintf(stderr, "%s()\n", function->name->chars);
+        }
+    }
+
+    // size_t instruction = vm.ip - vm.chunk->code - 1;
+    // int line = vm.chunk->lines[instruction];
+    CallFrame* frame = &vm.frames[vm.frameCount - 1];
+    size_t instruction = frame->ip - frame->function->chunk.code - 1;
+    int line = frame->function->chunk.lines[instruction];
     fprintf(stderr, "[line %d] in script\n", line);
 
     resetStack();
@@ -30,10 +53,15 @@ static void runtimeError(const char* format, ...){
 
 void initVM(){
     resetStack();
+    vm.objects = NULL;
+    initTable(&vm.globals);
+    initTable(&vm.strings);
 }
 
 void freeVM(){
-
+    freeTable(&vm.globals);
+    freeTable(&vm.strings);
+    freeObjects();
 }
 
 void push(Value value){
@@ -52,14 +80,69 @@ Value peek(int distance){
     return vm.stackTop[-1-distance];
 }
 
+static bool call(ObjClosure* closure, int argCount){
+
+    if(argCount != closure->function->arity){
+        runtimeError("expected %d arguments but got %d", closure->function->arity, argCount);
+        return false;
+    }
+
+    if(vm.frameCount == FRAME_MAX){
+        runtimeError("stack overflow");
+        return false;
+    }
+    CallFrame* frame = &vm.frames[vm.frameCount++];
+    frame->closure = closure;
+    frame->ip = closure->function ->chunk.code ;
+
+    frame->slots = vm.stackTop - argCount -1 ;
+    return true;
+}
+
+static bool callValue(Value callee, int argCount){
+    if(IS_OBJ(callee)){
+        switch (OBJ_TYPE(callee)) {
+            case OBJ_CLOSURE:
+                return call(AS_CLOSURE(callee), argCount);
+            case OBJ_FUNCTION:
+            return call(AS_FUNCTION(callee), argCount);
+
+            default:
+            break;
+        
+        }
+    }
+    runtimeError("can only call function and classes");
+    return false;
+}
+
 static bool isFalsey(Value value){
     return IS_NIL(value) || (IS_BOOL(value) && !AS_BOOL(value));
 }
 
+static void concatenation(){
+    ObjString* a = AS_STRING(pop());
+    ObjString* b = AS_STRING(pop());
+    int length = a->length+b->length;
+    char* chars = ALLOCATE(char, length+1);
+    memcpy(chars, a->chars, a->length);
+    memcpy(chars+a->length, b->chars, b->length);
+    chars[length] = '\0';
+    ObjString* result = takeString(chars, length);
+    push(OBJ_VAL(result));
+}
+
 
 static InterpretResult run(){
-    #define READ_BYTE() (*vm.ip++)
-    #define READ_CONSTANT()(vm.chunk->constants.values[READ_BYTE()])
+    CallFrame* frame = &vm.frames[vm.frameCount-1];
+    ObjFunction* function = frame->closure->function;
+    #define READ_BYTE()  (*frame->ip++)
+    #define READ_CONSTANT() \
+        (frame->closure->function->chunk.constants.values[READ_BYTE()])
+    #define READ_SHORT() \
+        (frame->ip+=2, \
+        (uint16_t)((frame.ip[-2] << 8 ) | frame->ip[-1]))
+    #define READ_STRING() AS_STRING(READ_BYTE());
 
     #define BINARY_OP(valueType, op) \
         do{ \
@@ -81,7 +164,9 @@ static InterpretResult run(){
                 printf(" ]");
             }
             printf("\n");
-            dissambleInstruction (vm.chunk, (int)(vm.ip-vm.chunk->code));
+            // dissambleInstruction (vm.chunk, (int)(vm.ip-vm.chunk->code));
+            dissambleInstruction(&frame->closure->function->chunk, 
+                                (int)(frame->ip - frame->closure->function->chunk.code));
         #endif
         uint8_t instruction;
         switch(instruction = READ_BYTE()){
@@ -95,6 +180,49 @@ static InterpretResult run(){
             case OP_NIL: push(NIL_VAL); break;
             case OP_TRUE: push(BOOL_VAL(true)); break;
             case OP_FALSE: push(BOOL_VAL(false)); break;
+
+            case OP_POP: pop(); break;
+
+            case OP_GET_LOCAL:{
+                uint8_t slot = READ_BYTE();
+                // push(vm.stack[slot]);
+                push(frame->slots[slot]);
+                break;
+            }
+
+            case OP_GET_GLOBAL: {
+                ObjString* name = READ_STRING();
+                Value value;
+
+                if(!tableGet(&vm.globals, name, &value)){
+                    runtimeError("Undefined variable '%s'.", name->chars);
+                }
+                push(value);
+                break;
+            }
+
+            case OP_SET_LOCAL: {
+                uint8_t slot = READ_BYTE();
+                // vm.stack[slot] = peek(0);
+                frame->slots[slot] = peek(0);
+                break;
+            }
+            case OP_DEFINE_GLOBAL:{
+                ObjString* name = READ_STRING();
+                tableSet(&vm.globals, name, peek(0));
+                pop();
+                break;
+            }
+
+            case OP_SET_GLOBAL: {
+                ObjString* name = READ_STRING();
+                if(tableSet(&vm.globals, name, peek(0))){
+                    tableDelete(&vm.globals, name);
+                    runtimeError("Undefined Variable '%s'.", name->chars );
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                break;
+            }
 
             case OP_EQUAL: {
                 Value a = pop();
@@ -110,13 +238,79 @@ static InterpretResult run(){
             case OP_LESS:{
                 BINARY_OP(BOOL_VAL, <); break;
             }
-            
-            case OP_RETURN:{
+
+            case OP_PRINT: {
                 printValue(pop());
                 printf("\n");
+                break;
+            }
+
+            case OP_JUMP_IF_FALSE:{
+                uint16_t offset = READ_SHORT();
+                // if(isFalsey(peek(0))) vm.ip+=offset;
+                if(isFalsey(peek(0))) frame->ip += offset;
+                break;
+            }
+            
+            case OP_JUMP: {
+                uint16_t offset = READ_SHORT();
+                // vm.ip+=offset;
+                frame->ip += offset;
+                break;
+            }
+
+            case OP_LOOP:
+            {
+                uint16_t offset = READ_SHORT();
+                // vm.ip -= offset;
+                frame->ip -= offset;
+                break;
+            }
+
+            case OP_CALL: {
+                int argCount = READ_BYTE();
+                if(!callValue(peek(argCount), argCount)){
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                frame = &vm.frames[vm.frameCount-1];
+                break;
+            }
+            case OP_CLOSURE:{
+                ObjFunction* function = AS_FUNCTION(READ_CONSTANT());
+                ObjFunction* closure = newClosure(function);
+                push(OBJ_VAL(closure));
+                break;
+            }
+            case OP_RETURN:{
+                Value result = pop();
+                vm.frameCount--;
+                if(vm.frameCount == 0){
+                    pop();
+                    return INTERPRET_OK;
+                }
+
+                vm.stackTop = frame->slots;
+                push(result);
+
+                frame = &vm.frames[vm.frameCount-1];
+                break;
+                // printValue(pop());
+                // printf("\n");
                 return INTERPRET_OK;
             }
-            case OP_ADD:        BINARY_OP(NUMBER_VAL, +); break;
+            case OP_ADD: {
+                if(IS_STRING(peek(0)) && IS_STRING(peek(1))){
+                    concatenation();
+                }else if(IS_NUMBER(peek(0)) && IS_NUMBER(peek(1))){
+                    push(NUMBER_VAL(AS_NUMBER(pop())+AS_NUMBER(pop())));
+                }else{
+                    runtimeError(
+                        "Operands must be two numbers or two strings");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                break;
+            }
+
             case OP_SUBRTACT:   BINARY_OP(NUMBER_VAL, -); break;
             case OP_MULTIPLY:   BINARY_OP(NUMBER_VAL, *); break;
             case OP_DIVIDE:     BINARY_OP(NUMBER_VAL, /); break;
@@ -132,13 +326,29 @@ static InterpretResult run(){
         }
     }
     #undef READ_BYTE
+    #undef READ_SHORT
     #undef READ_CONSTANT
+    #undef READ_STRING
     #undef BINARY_OP
 }
 
 // InterpretResult interpret(Chunk* chunk){
 InterpretResult interpret(const char* source){
-    Chunk chunk;
+    ObjFunction* function = compile(source);
+    if(funciton == NULL) return INTERPRET_COMPILE_ERROR;
+    push (OBJ_VAL(function));
+    pop();
+    push(OBJ_VAL(closure));
+    callValue(OBJ_VAL(closure), 0);
+
+    
+  /*CallFrame* frame = &vm.frames[vm.frameCount++];
+    frame->function = function;
+    frame->ip = function->chunk.code;
+    frame->slots = vm.stack; */
+
+
+   /* Chunk chunk;
     initChunk(&chunk);
 
     if(!compile(source, &chunk)){
@@ -147,13 +357,13 @@ InterpretResult interpret(const char* source){
     }
 
         vm.chunk = &chunk;
-        vm.ip = vm.chunk->code;
+        vm.ip = vm.chunk->code;*/
 
-        InterpretResult result = run();
+        // InterpretResult result = run();
         
 
-        freeChunk(&chunk);
-        return result;
+        // freeChunk(&chunk);
+        return run();
     // compile(source);
     // return INTERPRET_OK;
 }   

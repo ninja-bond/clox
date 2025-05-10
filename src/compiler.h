@@ -3,6 +3,7 @@
 #include "object.h"
 #include "vm.h"
 
-bool compile(const char* source, Chunk* chunk);
+ObjFunction* compiler(const char* source);
+// bool compile(const char* source, Chunk* chunk);
 
 #endif
